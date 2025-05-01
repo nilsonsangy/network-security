@@ -3,7 +3,7 @@
 **Objective:** Guidelines to establish Information Security objectives appropriate to the business context and its inherent risks, in line with the company's Mission, Vision, and Values.
 
 **Author:** IT Security Department  
-**Contact:** governanca@organizacao.com.br
+**Contact:** governance@organization.com
 
 **Target Audience:** All XPTO Financial Employees
 
