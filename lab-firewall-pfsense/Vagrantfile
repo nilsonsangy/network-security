@@ -1,0 +1,94 @@
+# Aula 11 — laboratorio de seguranca de perimetro com pfSense (VMware Workstation/Fusion).
+#
+# Topologia (2 VMs Linux + pfSense INSTALADO MANUALMENTE fora do Vagrant):
+#
+#     [ cliente-lan ]        [ cliente-dmz ]
+#      LAN 10.10.10.0/24      DMZ 10.10.20.0/24
+#            \                     /
+#             \                   /
+#            [ pfSense ]  (firewall/gateway entre os segmentos)
+#          IP LAN 10.10.10.1     IP DMZ 10.10.20.1
+#
+# Cada VM tem duas interfaces de rede:
+#   eth0  NAT (VMnet8) - criada automaticamente pelo Vagrant; da SSH e internet as VMs.
+#   eth1  rede privada host-only do seu segmento (LAN ou DMZ) - a rede do laboratorio.
+#
+# O pfSense NAO e definido aqui. Ele e instalado a parte (a partir da ISO), com uma
+# interface na rede host-only da LAN (final .1) e outra na rede host-only da DMZ (final .1).
+# Enquanto o pfSense nao estiver com as interfaces nesses IPs e com as regras criadas
+# nos exercicios, o roteamento LAN<->DMZ NAO funciona: as VMs so alcancam a internet
+# pela NAT do Vagrant (eth0). O trafego entre LAN e DMZ so passa pelo pfSense.
+#
+# A sub-rede do lab usa LAN 10.10.10.0/24 e DMZ 10.10.20.0/24, os mesmos IPs
+# usados na aula (LAN do firewall 10.10.10.1, WAN 192.168.56.10). Se estes
+# enderecos colidirem com algo na sua rede, ajuste as variaveis acima.
+# O provisionamento baixa pacotes pela NAT (eth0).
+#
+# Executar:  vagrant up --provider=vmware_desktop
+
+# =====================================================================
+# VARIAVEIS DE REDE — AJUSTE estes valores para casar com o IP da LAN/DMZ
+# configurado no seu pfSense. O final .1 de cada rede e o IP daquela
+# interface do pfSense (o gateway do segmento).
+# =====================================================================
+LAN_NET        = "10.10.10.0/24"   # rede host-only da LAN
+LAN_GW         = "10.10.10.1"      # IP da interface LAN do pfSense (gateway da LAN)
+CLIENTE_LAN_IP = "10.10.10.50"     # IP fixo da VM cliente-lan
+
+DMZ_NET        = "10.10.20.0/24"   # rede host-only da DMZ
+DMZ_GW         = "10.10.20.1"      # IP da interface DMZ do pfSense (gateway da DMZ)
+CLIENTE_DMZ_IP = "10.10.20.50"     # IP fixo da VM cliente-dmz
+# =====================================================================
+
+Vagrant.configure("2") do |config|
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  # ---- Diretorio das VMs: pasta padrao do VMware Workstation ------------
+  # As VMs (clones) sao criadas em "<home>/Documents/Virtual Machines" em vez
+  # de dentro do repositorio. Resolvido em runtime para ser portavel entre
+  # maquinas. Pode ser sobrescrito pela variavel de ambiente
+  # VAGRANT_VMWARE_CLONE_DIRECTORY.
+  require "fileutils"
+  user_home = ENV["USERPROFILE"] || ENV["HOME"] || Dir.home
+  vm_clone_dir = ENV["VAGRANT_VMWARE_CLONE_DIRECTORY"] ||
+                 File.join(user_home, "Documents", "Virtual Machines")
+  FileUtils.mkdir_p(vm_clone_dir)
+
+  # ---- Cliente na LAN --------------------------------------------------
+  # eth1 na rede host-only da LAN; rota para a DMZ via LAN_GW (pfSense).
+  # Serve uma pagina HTTP "cliente-lan" na porta 80 para testar as regras.
+  config.vm.define "cliente-lan" do |vm|
+    vm.vm.box = "bento/ubuntu-24.04"
+    vm.vm.hostname = "cliente-lan"
+    vm.vm.network "private_network", ip: CLIENTE_LAN_IP
+    vm.vm.provider "vmware_desktop" do |p|
+      p.clone_directory = vm_clone_dir
+      p.vmx["memsize"]  = "768"
+      p.vmx["numvcpus"] = "1"
+      p.gui = false
+    end
+    # args: 1) gateway (IP LAN do pfSense)  2) alvo na DMZ (para testes/rotas)
+    vm.vm.provision "shell",
+      path: "provision-cliente-lan.sh",
+      args: [LAN_GW, CLIENTE_DMZ_IP]
+  end
+
+  # ---- Cliente na DMZ --------------------------------------------------
+  # eth1 na rede host-only da DMZ; rota para a LAN via DMZ_GW (pfSense).
+  # Serve uma pagina HTTP "cliente-dmz" na porta 80 para testar as regras.
+  config.vm.define "cliente-dmz" do |vm|
+    vm.vm.box = "bento/ubuntu-24.04"
+    vm.vm.hostname = "cliente-dmz"
+    vm.vm.network "private_network", ip: CLIENTE_DMZ_IP
+    vm.vm.provider "vmware_desktop" do |p|
+      p.clone_directory = vm_clone_dir
+      p.vmx["memsize"]  = "768"
+      p.vmx["numvcpus"] = "1"
+      p.gui = false
+    end
+    # args: 1) gateway (IP DMZ do pfSense)  2) alvo na LAN (para testes/rotas)
+    vm.vm.provision "shell",
+      path: "provision-cliente-dmz.sh",
+      args: [DMZ_GW, CLIENTE_LAN_IP]
+  end
+end
