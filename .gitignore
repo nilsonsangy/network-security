@@ -1,2 +1,18 @@
 # Kiro spec/workspace files - not versioned
 .kiro/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Editors/OS
+.vscode/
+.DS_Store
+Thumbs.db

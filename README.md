@@ -1,41 +1,123 @@
-# network-security
+<div align="center">
 
-A collection of scripts, tools, and reference material for network security — from an information security policy to hands-on firewall labs.
+# 🕵️‍♂️ Network Security Toolkit
 
-## Contents
+**Useful scripts for security auditing, hardening, and network intelligence**
 
-| Item | Type | Description |
-|------|------|-------------|
-| [`Information_Security_Policy/`](Information_Security_Policy) | Document | Information Security Policy (ISP) template, in English and Portuguese. |
-| [`JEA-secure-privileged-access.ps1`](JEA-secure-privileged-access.ps1) | PowerShell script | Restricted privileged access with Just Enough Administration (JEA). |
-| [`ping-sweep.ps1`](ping-sweep.ps1) | PowerShell script | Sweep a subnet to find active hosts via ping. |
-| [`lab-firewall-pfsense/`](lab-firewall-pfsense) | Lab | Hands-on perimeter-security lab with pfSense between LAN and DMZ. |
+[![Python 3.x](https://img.shields.io/badge/python-3.x-blue.svg)](https://www.python.org/downloads/)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)](#)
+
+*Automate common security tasks and generate actionable reports*
+
+</div>
 
 ---
 
-## Information_Security_Policy
+## 📋 Table of Contents
 
-An Information Security Policy (ISP) template — a document that defines the rules, guidelines, and best practices for protecting an organization's information assets.
+- [🧰 Tools Overview](#-tools-overview)
+- [🚀 Quick Start](#-quick-start)
+- [ Usage](#-usage)
+  - [IP WHOIS/RDAP Report (PDF)](#ip-whoisrdap-report-pdf)
+- [🧪 Firewall Lab (pfSense)](#-firewall-lab-pfsense)
+- [⚙️ Requirements](#️-requirements)
+- [⚠️ Disclaimer](#-disclaimer)
+- [💝 Donations](#-donations)
 
-- **`/`** — English version (`README.md`).
-- **`pt-br/`** — Brazilian Portuguese version (`README.md`).
+---
 
-## JEA-secure-privileged-access.ps1
+## 🧰 Tools Overview
 
-A script that implements the **Just Enough Administration (JEA)** principle — role-based access control (RBAC) — through PowerShell Remoting, granting only the privileges needed for each administrative task.
+| Tool / Script | Description | Platform |
+| --- | --- | --- |
+| `ip_whois_report.py` | Query WHOIS/RDAP for IPs and generate a grouped PDF report | Windows / Linux / WSL |
+| `AD_security_audit.ps1` | Active Directory security audit checks and reporting | Windows |
+| `enumerate_ptr.sh` | Enumerate reverse DNS (PTR) records for a range/subnet | Linux |
+| `iptables_basic_rules.sh` | Baseline iptables rules | Linux |
+| `iptables_restrict_output.sh` | Restrict outbound traffic to web-only (HTTP/HTTPS/DNS) | Linux |
+| `Just_Enough_Administration.ps1` | JEA (RBAC) with PowerShell Remoting | Windows |
+| `Information_Security_Policy/` | Templates and docs for security policies | Any |
+| `lab-firewall-pfsense/` | Hands-on perimeter-security lab: pfSense firewall/gateway between LAN and DMZ | Linux / VMware |
 
-## ping-sweep.ps1
+---
 
-A network-sweep script that iterates over the addresses in a subnet and reports which hosts respond to ping, running the checks in parallel to speed up the result.
+## 🚀 Quick Start
 
-## lab-firewall-pfsense
+```powershell
+# Clone the repository
+git clone https://github.com/nilsonsangy/network-security.git
+cd network-security
 
-A hands-on **perimeter-security** lab that uses **pfSense** as the firewall/gateway between a LAN segment and a DMZ segment. The automation brings up the two client VMs with Vagrant on VMware; pfSense is installed manually and routes traffic between the segments.
+# Create and activate a local Python environment (.venv)
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# (Optional) allow venv activation if blocked
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+Linux / WSL:
+
+```bash
+git clone https://github.com/nilsonsangy/network-security.git
+cd network-security
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Deactivate the environment when done:
+
+```bash
+deactivate
+```
+
+---
+
+## 📖 Usage
+
+### IP WHOIS/RDAP Report (PDF)
+
+Generate a PDF report grouped by the responsible organization/person.
+
+```powershell
+# Single IP
+python ip_whois_report.py 8.8.8.8
+
+# Comma-separated list
+python ip_whois_report.py 8.8.8.8,1.1.1.1
+
+# File with one IP per line
+python ip_whois_report.py ips.txt
+
+# Override output path (-o accepts a folder or a final PDF file path)
+python ip_whois_report.py 8.8.8.8 -o $env:USERPROFILE\Downloads\my_report.pdf
+```
+
+Output location (auto):
+- Windows: user `Downloads` folder
+- Linux/WSL: user `HOME` folder
+- Unknown OS: current directory
+
+The PDF includes:
+- RDAP summary (CIDR, name, handle, country, range, etc.)
+- Contacts/entities when available
+- WHOIS snippet (if the `whois` command exists on your system)
+- Grouping by responsible (organization/person)
+
+---
+
+## 🧪 Firewall Lab (pfSense)
+
+A hands-on **perimeter-security** lab that uses **pfSense** as the firewall/gateway between a LAN segment and a DMZ segment. The automation brings up two Ubuntu client VMs with Vagrant on VMware; pfSense is installed manually and routes traffic between the segments.
 
 ### Topology
 
 ```
-   [ cliente-lan ]                         [ cliente-dmz ]
+   [ client-lan ]                          [ client-dmz ]
    LAN 10.10.10.0/24                        DMZ 10.10.20.0/24
           \                                       /
            \                                     /
@@ -46,18 +128,43 @@ A hands-on **perimeter-security** lab that uses **pfSense** as the firewall/gate
    Each VM: eth0 = NAT (internet/SSH)  |  eth1 = host-only lab segment
 ```
 
-### Files
+### Files (`lab-firewall-pfsense/`)
 
-- `Vagrantfile` — defines two Ubuntu VMs on VMware: a client on the LAN (10.10.10.0/24) and a client on the DMZ (10.10.20.0/24).
-- `provision-cliente-lan.sh` — provisions the LAN client (test tools and a simple HTTP page on port 80).
-- `provision-cliente-dmz.sh` — provisions the DMZ client (test tools and a simple HTTP page on port 80).
+- `Vagrantfile` — defines two Ubuntu VMs on VMware: `client-lan` on the LAN (10.10.10.0/24) and `client-dmz` on the DMZ (10.10.20.0/24).
+- `provision-client-lan.sh` — provisions the LAN client (test tools and a simple HTTP page on port 80).
+- `provision-client-dmz.sh` — provisions the DMZ client (test tools and a simple HTTP page on port 80).
 
 ### Getting started
 
 From inside the `lab-firewall-pfsense/` directory:
 
-```
+```bash
 vagrant up --provider=vmware_desktop
 ```
 
 > pfSense is not managed by Vagrant: install it manually from the ISO, with the LAN interface at `10.10.10.1` and the DMZ interface at `10.10.20.1`. Routing between LAN and DMZ only works once pfSense is active and the rules are configured.
+
+---
+
+## ⚙️ Requirements
+
+- Python 3.8+
+- Virtual environment: `.venv` in the repo root (recommended)
+- Install: `pip install -r requirements.txt`
+- Optional: `whois` CLI on the OS (for WHOIS snippet fallback)
+
+---
+
+## ⚠️ Disclaimer
+
+This project is intended for educational and defensive security purposes only. Always ensure you have authorization before running any security tooling in environments you do not own.
+
+---
+
+## 💝 Donations
+
+If you find this project helpful and would like to support its development, consider making a donation. Your contribution helps keep this toolkit updated and motivates further improvements!
+
+| ☕ Support this project (EN) | ☕ Apoie este projeto (PT-BR) |
+|-----------------------------|------------------------------|
+| If this project helps you or you think it's cool, consider supporting:<br>💳 [PayPal](https://www.paypal.com/donate/?business=7CC3CMJVYYHAC&no_recurring=0&currency_code=BRL)<br>![PayPal QR code](https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://www.paypal.com/donate/?business=7CC3CMJVYYHAC&no_recurring=0&currency_code=BRL) | Se este projeto te ajuda ou você acha legal, considere apoiar:<br>🇧🇷 Pix: `df92ab3c-11e2-4437-a66b-39308f794173`<br>![Pix QR code](https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=df92ab3c-11e2-4437-a66b-39308f794173) |
