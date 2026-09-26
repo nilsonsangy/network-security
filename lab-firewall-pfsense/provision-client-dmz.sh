@@ -33,15 +33,60 @@ apt-get install -y -qq curl iputils-ping python3
 LAB_IFACE="$(ip -o -4 addr show | awk '$2 != "lo" {print $2}' | grep -v -E 'eth0|ens.*0$' | head -n1)"
 [ -z "$LAB_IFACE" ] && LAB_IFACE="eth1"
 
-# --- Route to the LAN via pfSense (idempotent) ------------------------------
-# Specific route to the LAN, without touching the default route (which exits via NAT).
-# Only takes effect once pfSense is active at $GATEWAY.
-if ! ip route show | grep -q "^${LAN_NET%/*}/24 "; then
-  ip route replace "$LAN_NET" via "$GATEWAY" dev "$LAB_IFACE" || \
-    echo "WARNING: could not install the route now (pfSense may be inactive)."
-else
-  ip route replace "$LAN_NET" via "$GATEWAY" dev "$LAB_IFACE" || true
-fi
+# --- Persistent route to the LAN via pfSense --------------------------------
+# The traffic between segments MUST cross the pfSense, never the NAT (eth0).
+# A specific /24 route beats the default route, so DMZ->LAN always goes via the
+# pfSense DMZ interface ($GATEWAY). We install it as a systemd oneshot unit so it
+# is (re)applied on every boot, even if pfSense was not up yet at provision time.
+cat > /usr/local/sbin/lab-route.sh <<ROUTE
+#!/usr/bin/env bash
+# Force LAN traffic through the pfSense DMZ interface (not the NAT).
+# The route is a directly-connected next hop, so it can be installed even before
+# the pfSense answers. We (re)install it and then wait for the gateway to come up,
+# retrying for a while so a reboot before pfSense is ready still ends up correct.
+GW="${GATEWAY}"
+NET="${LAN_NET}"
+DEV="${LAB_IFACE}"
+for i in \$(seq 1 60); do
+  ip route replace "\$NET" via "\$GW" dev "\$DEV" 2>/dev/null || true
+  if ping -c1 -W1 "\$GW" >/dev/null 2>&1; then
+    # gateway reachable: make sure the route is in place and stop.
+    ip route replace "\$NET" via "\$GW" dev "\$DEV" 2>/dev/null || true
+    exit 0
+  fi
+  sleep 5
+done
+# Even if the gateway never answered, leave the route staged.
+ip route replace "\$NET" via "\$GW" dev "\$DEV" 2>/dev/null || true
+exit 0
+ROUTE
+chmod +x /usr/local/sbin/lab-route.sh
+
+cat > /etc/systemd/system/lab-route.service <<'UNIT'
+[Unit]
+Description=Lab static route (segment traffic via pfSense, not the NAT)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lab-route.sh
+RemainAfterExit=yes
+# If it fails for any reason, keep trying.
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable lab-route.service || true
+# Run it now in the background (it retries until the gateway is up).
+systemctl start lab-route.service || true
+# Best-effort immediate install too.
+ip route replace "$LAN_NET" via "$GATEWAY" dev "$LAB_IFACE" 2>/dev/null || \
+  echo "NOTE: route staged; lab-route.service keeps (re)applying it until the gateway is up."
 
 # --- Simple "client-dmz" HTTP server on port 80 via systemd (idempotent) ----
 install -d -m 0755 /var/www/lab

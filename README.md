@@ -125,7 +125,8 @@ A hands-on **perimeter-security** lab that uses **pfSense** as the firewall/gate
                     LAN 10.10.10.1  |  DMZ 10.10.20.1
                  (firewall/gateway between the segments)
 
-   Each VM: eth0 = NAT (internet/SSH)  |  eth1 = host-only lab segment
+   Each VM: eth0 = NAT (provisioning only, disconnect before testing)
+            eth1 = host-only lab segment (traffic crosses pfSense)
 ```
 
 ### Files (`lab-firewall-pfsense/`)
@@ -136,13 +137,68 @@ A hands-on **perimeter-security** lab that uses **pfSense** as the firewall/gate
 
 ### Getting started
 
-From inside the `lab-firewall-pfsense/` directory:
+1. Install pfSense manually from the ISO (it is **not** managed by Vagrant), with
+   three interfaces: WAN, LAN at `10.10.10.1` and DMZ at `10.10.20.1`.
+2. From inside the `lab-firewall-pfsense/` directory, bring up the client VMs:
 
-```bash
-vagrant up --provider=vmware_desktop
-```
+   ```bash
+   vagrant up --provider=vmware_desktop
+   ```
 
-> pfSense is not managed by Vagrant: install it manually from the ISO, with the LAN interface at `10.10.10.1` and the DMZ interface at `10.10.20.1`. Routing between LAN and DMZ only works once pfSense is active and the rules are configured.
+3. **Disconnect the NAT interface (`eth0`) on both client VMs before testing.**
+   In VMware, edit each VM (`client-lan` and `client-dmz`), select the NAT
+   network adapter and uncheck **Connected** (the "disconnect the virtual cable"
+   option). Do this only *after* provisioning finishes.
+
+> **Why disconnect the NAT?** `eth0` (NAT) exists only so the VMs can download
+> packages and be provisioned. If it stays connected during the exercises, the two
+> clients share the same NAT network and can reach each other **bypassing the
+> pfSense** — which would make every firewall rule look ineffective. With `eth0`
+> disconnected, the only path between LAN (10.10.10.0/24) and DMZ (10.10.20.0/24)
+> is through pfSense, so the firewall rules actually take effect. The provisioning
+> installs a persistent static route (systemd unit `lab-route.service`) that forces
+> the inter-segment traffic through the pfSense gateway.
+
+> **Note:** with `eth0` disconnected, `vagrant ssh` no longer works (it relies on
+> the NAT port-forward). Use the VMware console window of each VM to run the tests,
+> or reconnect `eth0` temporarily if you need `vagrant ssh` again.
+
+> **Reaching the internet after disconnecting the NAT.** With `eth0` down, a client
+> VM loses its default route and DNS (they came from the NAT). For exercises that
+> reach the internet through pfSense (egress filtering), point both at the firewall
+> on the client, e.g. on `client-lan`:
+>
+> ```bash
+> sudo ip route add default via 10.10.10.1 dev eth1   # default route via pfSense
+> sudo resolvectl dns eth1 8.8.8.8                     # DNS for the lab interface
+> ```
+>
+> Without this, `curl http://archive.ubuntu.com/` fails with `Could not resolve
+> host` — that is missing route/DNS, not a firewall rule.
+
+> Routing between LAN and DMZ only works once pfSense is active **and** the exercise
+> rules are configured.
+
+### Troubleshooting: ping between segments does not come back
+
+If a segment-to-segment ping fails **even with the correct rules** — the request
+reaches the target and the target replies (confirmed with `tcpdump`), but the
+reply never gets back — the usual cause is an **IP conflict on the `.1`**.
+
+VMware creates a host adapter on each host-only network (VMnet). That host adapter
+can grab the `.1` of the subnet — the same address you assigned to the pfSense
+gateway. With two owners for the same IP, ARP gets poisoned and replies are sent to
+the wrong MAC.
+
+Fix:
+1. In the VMware **Virtual Network Editor**, give the host adapter of each host-only
+   VMnet an address **other than `.1`** (e.g. `.5`), leaving `.1` exclusive to
+   pfSense. Confirm with `ipconfig /all` that no `VMware Network Adapter` uses `.1`.
+2. Flush the stale ARP caches everywhere:
+   - Client VMs (Linux): `sudo ip neigh flush all`
+   - pfSense (Shell, option 8): `arp -d -a`
+   - Windows host (Admin prompt): `netsh interface ip delete arpcache`
+3. Re-test: `ping` between the segments should now complete.
 
 ---
 
