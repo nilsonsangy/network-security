@@ -1,0 +1,90 @@
+# SIEM lab with Wazuh all-in-one (VMware Workstation/Fusion).
+#
+# Topology (2 Linux VMs, BOTH managed by Vagrant), on the SAME lab network
+# used by the aula-11 lab so you do not have to create new VMware host-only
+# networks:
+#
+#     [ wazuh ]                       [ agent ]
+#      Wazuh all-in-one                wazuh-agent
+#      server + indexer + dashboard    registered to the manager
+#      10.10.10.77                     10.10.10.99
+#            \                               /
+#             \                             /
+#              +--- lab network 10.10.10.0/24 ---+
+#                    (private host-only, eth1)
+#
+# Both VMs sit on the 10.10.10.0/24 host-only network (the same segment the
+# aula-11 lab already uses in VMware). The Wazuh server is 10.10.10.77 and the
+# agent is 10.10.10.99; the agent registers with the manager over this network.
+#
+# (Vagrant also attaches a management/NAT interface automatically so the VMs can
+# download packages during provisioning. It is not part of the lab design and you
+# do not configure it, so it is intentionally left out of the slides and diagram.)
+#
+# Run:  vagrant up --provider=vmware_desktop
+
+# =====================================================================
+# NETWORK VARIABLES — same 10.10.10.0/24 segment as the aula-11 lab.
+# WAZUH_IP is where the agent registers and where the dashboard is
+# served (https://WAZUH_IP).
+# =====================================================================
+LAB_NET   = "10.10.10.0/24"   # private host-only lab network (shared with aula-11)
+WAZUH_IP  = "10.10.10.77"     # Wazuh all-in-one VM (server + indexer + dashboard)
+AGENT_IP  = "10.10.10.99"     # Wazuh agent VM
+# =====================================================================
+
+Vagrant.configure("2") do |config|
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  # ---- VM directory: VMware Workstation default folder ------------------
+  # The VMs (clones) are created under "<home>/Documents/Virtual Machines"
+  # instead of inside the repository. Resolved at runtime to stay portable
+  # across machines. Can be overridden with the environment variable
+  # VAGRANT_VMWARE_CLONE_DIRECTORY.
+  require "fileutils"
+  user_home = ENV["USERPROFILE"] || ENV["HOME"] || Dir.home
+  vm_clone_dir = ENV["VAGRANT_VMWARE_CLONE_DIRECTORY"] ||
+                 File.join(user_home, "Documents", "Virtual Machines")
+  FileUtils.mkdir_p(vm_clone_dir)
+
+  # ---- Wazuh all-in-one server -----------------------------------------
+  # eth1 on the lab network at WAZUH_IP. Runs the Wazuh server, indexer
+  # (OpenSearch) and dashboard. The indexer is JVM-heavy, so this VM gets
+  # 4 GB of RAM and 2 vCPUs. Defined FIRST so the manager is up before the
+  # agent tries to register.
+  config.vm.define "wazuh" do |vm|
+    vm.vm.box = "bento/ubuntu-24.04"
+    vm.vm.hostname = "wazuh"
+    vm.vm.network "private_network", ip: WAZUH_IP
+    vm.vm.provider "vmware_desktop" do |p|
+      p.clone_directory = vm_clone_dir
+      p.vmx["memsize"]  = "4096"
+      p.vmx["numvcpus"] = "2"
+      p.gui = false
+    end
+    # args: 1) WAZUH_IP (dashboard URL / bind reference)
+    vm.vm.provision "shell",
+      path: "provision-wazuh.sh",
+      args: [WAZUH_IP]
+  end
+
+  # ---- Wazuh agent ------------------------------------------------------
+  # eth1 on the lab network at AGENT_IP. Runs the wazuh-agent registered to
+  # the manager at WAZUH_IP. Defined AFTER "wazuh" so the manager comes up
+  # first and the registration succeeds.
+  config.vm.define "agent" do |vm|
+    vm.vm.box = "bento/ubuntu-24.04"
+    vm.vm.hostname = "agent"
+    vm.vm.network "private_network", ip: AGENT_IP
+    vm.vm.provider "vmware_desktop" do |p|
+      p.clone_directory = vm_clone_dir
+      p.vmx["memsize"]  = "1024"
+      p.vmx["numvcpus"] = "1"
+      p.gui = false
+    end
+    # args: 1) WAZUH_MANAGER (=WAZUH_IP)  2) AGENT_IP
+    vm.vm.provision "shell",
+      path: "provision-agent.sh",
+      args: [WAZUH_IP, AGENT_IP]
+  end
+end
