@@ -12,8 +12,11 @@ export DEBIAN_FRONTEND=noninteractive
 
 WAZUH_IP="${1:-10.10.10.77}"
 
-# Pin to the current 4.x line of the installer.
-WAZUH_INSTALL_URL="https://packages.wazuh.com/4.x/wazuh-install.sh"
+# Pin to a specific Wazuh version for the all-in-one installer. The old
+# /4.x/ alias for wazuh-install.sh was retired and now returns HTTP 403, so
+# the URL must carry an explicit version (e.g. 4.14). Bump WAZUH_VERSION to move.
+WAZUH_VERSION="4.14"
+WAZUH_INSTALL_URL="https://packages.wazuh.com/${WAZUH_VERSION}/wazuh-install.sh"
 
 # --- Connectivity check (provisioning needs to download packages) ---
 if ! curl -fsS --max-time 10 -o /dev/null http://archive.ubuntu.com/ 2>/dev/null; then
